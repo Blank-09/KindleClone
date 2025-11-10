@@ -1,0 +1,36 @@
+root = true
+
+[*]
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+# C, C++, Headers, Arduino (.ino)
+[*.{c,cpp,h,hpp,ino}]
+indent_style = space
+indent_size = 4
+tab_width = 4
+max_line_length = 120
+
+# PlatformIO + ESP-IDF build system files
+[platformio.ini]
+indent_style = space
+indent_size = 2
+
+[*.py]
+indent_style = space
+indent_size = 4
+
+# JSON, YAML (PlatformIO / ESP-IDF configs)
+[*.{json,yml,yaml}]
+indent_style = space
+indent_size = 2
+
+# Markdown and docs
+[*.{md,txt}]
+trim_trailing_whitespace = false
+
+# Makefiles (still tabs required)
+[Makefile]
+indent_style = tab
