@@ -4,28 +4,28 @@
 #include <Arduino.h>
 #include "config.h"
 
-enum ButtonAction
+struct ButtonEvent
 {
-    BUTTON_NONE,
-    BUTTON_PREV_PRESSED,
-    BUTTON_NEXT_PRESSED,
-    BUTTON_MENU_PRESSED
+    ButtonEventType type;
+    uint8_t mask; // Which buttons triggered this (e.g., A+B = 3)
 };
 
 class ButtonManager
 {
 private:
-    unsigned long lastPressTime;
-    bool prevPressed;
-    bool nextPressed;
-    bool menuPressed;
+    unsigned long pressStartTime;
+    uint8_t lastStableMask;
+    bool longPressTriggered;
+
+    uint8_t readRawState();
 
 public:
     ButtonManager();
     void setup();
-    ButtonAction checkButtons();
     void setupDeepSleepWakeup();
-    ButtonAction getWakeupButton();
+
+    // Returns EVENT_NONE if nothing happened
+    ButtonEvent checkButtons();
 };
 
 #endif

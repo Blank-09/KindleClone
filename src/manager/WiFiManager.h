@@ -17,7 +17,6 @@ public:
     void manageConnection();
     void updateActivity();
     bool isConnected();
-    int getSignalStrength();
 };
 
 #endif

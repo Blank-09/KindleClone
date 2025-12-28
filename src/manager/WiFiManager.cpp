@@ -63,8 +63,3 @@ bool WiFiManager::isConnected()
 {
     return WiFi.status() == WL_CONNECTED;
 }
-
-int WiFiManager::getSignalStrength()
-{
-    return WiFi.RSSI();
-}

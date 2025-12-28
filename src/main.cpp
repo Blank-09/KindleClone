@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include <GxEPD2_4G_4G.h>
-#include <Preferences.h>
 #include "gxepd2/display_selection.h"
 
 #include "config.h"
@@ -21,31 +20,19 @@ WiFiManager wifiManager;
 APIClient apiClient;
 DisplayManager displayManager;
 PowerManager powerManager;
-Preferences prefs;
 
 // Image buffer
 uint8_t imageBuffer[IMAGE_BUFFER_SIZE_4LEVEL];
 bool imageLoaded = false;
-int currentPage = 0;
-int threshold = 128;
-const char *modes[] = {"floyd_steinberg", "threshold"};
-uint8_t currentModeIndex = 0;
 
 // Function declarations
-void handleButtonAction(ButtonAction action);
+void handleButtonEvent(ButtonEvent event);
 bool loadAndDisplayImage();
-void updatePage(int delta);
-void toggleMode();
 
 void setup()
 {
     Serial.begin(115200);
     Serial.println("ePaper Reader - Starting...");
-
-    // Initialize preferences first to restore state
-    prefs.begin("epaper", false);
-    currentPage = prefs.getInt("page", 0);
-    currentModeIndex = prefs.getUChar("mode", 0);
 
     // Initialize managers
     displayManager.init();
@@ -58,9 +45,18 @@ void setup()
 
     if (wakeupReason == ESP_SLEEP_WAKEUP_EXT0)
     {
-        Serial.println("Woke from button press");
-        ButtonAction action = buttonManager.getWakeupButton();
-        handleButtonAction(action);
+        Serial.println("Woke from Deep Sleep (Button A)");
+
+        // CRITICAL CHANGE:
+        // We know Button A woke us. We manually create an event for it.
+        // This ensures the device immediately goes to the "Previous Page"
+        // without waiting for the button to be released.
+
+        ButtonEvent wakeEvent;
+        wakeEvent.type = EVENT_SHORT_PRESS;
+        wakeEvent.mask = BTN_A_MASK; // We know it was Button A (Pin 32)
+
+        handleButtonEvent(wakeEvent);
     }
     else
     {
@@ -86,10 +82,10 @@ void setup()
 void loop()
 {
     // Check for button presses
-    ButtonAction action = buttonManager.checkButtons();
-    if (action != BUTTON_NONE)
+    ButtonEvent event = buttonManager.checkButtons();
+    if (event.type != EVENT_NONE)
     {
-        handleButtonAction(action);
+        handleButtonEvent(event);
         powerManager.updateActivity();
     }
 
@@ -99,81 +95,58 @@ void loop()
     // Check if should go to sleep
     if (powerManager.shouldSleep())
     {
-        prefs.end(); // Save preferences before sleep
         displayManager.hibernate();
         powerManager.goToDeepSleep();
     }
 
-    delay(100);
+    delay(20);
 }
 
-void handleButtonAction(ButtonAction action)
+void handleButtonEvent(ButtonEvent event)
 {
-    // Ensure WiFi is connected
+    // Ensure WiFi for any action
     if (!wifiManager.isConnected())
-    {
         wifiManager.connect();
+
+    Serial.printf("Event: Type=%d, Mask=%d\n", event.type, event.mask);
+
+    // --- GLOBAL SHORTCUTS ---
+
+    // Reboot: Hold A + F together
+    if (event.mask == (BTN_A_MASK | BTN_F_MASK) && event.type == EVENT_LONG_PRESS)
+    {
+        Serial.println("Rebooting...");
+        ESP.restart();
     }
 
-    switch (action)
+    bool serverReceived = apiClient.sendButtonEvent(event.mask, event.type);
+
+    if (serverReceived)
     {
-    case BUTTON_PREV_PRESSED:
-        Serial.println("Previous page");
-        updatePage(-1);
-        break;
+        Serial.println("Server processed event. Updating view...");
 
-    case BUTTON_NEXT_PRESSED:
-        Serial.println("Next page");
-        updatePage(1);
-        break;
-
-    case BUTTON_MENU_PRESSED:
-        Serial.println("Toggle mode");
-        toggleMode();
-        break;
-
-    default:
-        break;
+        // 3. Update View
+        // We assume the server updated its internal state (changed page, opened menu).
+        // Now we just fetch the "current" view.
+        imageLoaded = loadAndDisplayImage();
+        if (!imageLoaded)
+        {
+            displayManager.showError(true);
+        }
     }
-}
-
-void updatePage(int delta)
-{
-    currentPage += delta;
-    prefs.putInt("page", currentPage);
-
-    imageLoaded = loadAndDisplayImage();
-    if (!imageLoaded)
+    else
     {
-        displayManager.showError(wifiManager.isConnected());
-    }
-}
-
-void toggleMode()
-{
-    currentModeIndex = (currentModeIndex + 1) % 2;
-    prefs.putUChar("mode", currentModeIndex);
-
-    Serial.printf("Mode: %s\n", modes[currentModeIndex]);
-
-    imageLoaded = loadAndDisplayImage();
-    if (!imageLoaded)
-    {
-        displayManager.showError(wifiManager.isConnected());
+        Serial.println("Server failed to respond.");
+        // Optional: Show a small "!" icon or error
     }
 }
 
 bool loadAndDisplayImage()
 {
-    // Build URL
-    static char url[256];
-    snprintf(url, sizeof(url), CHAPTER_API, 250, currentPage,
-             modes[currentModeIndex], threshold);
-
     // Fetch and display
     wifiManager.updateActivity();
 
-    if (apiClient.fetchImage(url, imageBuffer))
+    if (apiClient.fetchImage(CURRENT_PAGE_API, imageBuffer))
     {
         displayManager.showImage(imageBuffer);
         return true;

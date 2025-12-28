@@ -16,6 +16,10 @@ private:
 public:
     APIClient();
     bool fetchImage(const char *endpoint, uint8_t *imageBuffer);
+
+    // NEW: Send button event to server
+    // Returns true if server says "refresh needed" or command success
+    bool sendButtonEvent(uint8_t buttonMask, uint8_t eventType);
 };
 
 #endif

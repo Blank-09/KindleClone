@@ -184,3 +184,64 @@ bool APIClient::processBMPData(uint8_t *tempBuffer, int bytesRead, uint8_t *imag
         return false;
     }
 }
+
+bool APIClient::sendButtonEvent(uint8_t buttonMask, uint8_t eventType)
+{
+    if (WiFi.status() != WL_CONNECTED)
+        return false;
+
+    HTTPClient http;
+    http.begin(API_BUTTON);
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("User-Agent", "ESP32-ePaper/1.0");
+
+    // 1. Create JSON Payload
+    // We map bitmasks to readable characters for the Python server
+    char btnChar = '?';
+    if (buttonMask & BTN_A_MASK)
+        btnChar = 'A';
+    else if (buttonMask & BTN_B_MASK)
+        btnChar = 'B';
+    else if (buttonMask & BTN_C_MASK)
+        btnChar = 'C';
+    else if (buttonMask & BTN_D_MASK)
+        btnChar = 'D';
+    else if (buttonMask & BTN_E_MASK)
+        btnChar = 'E';
+    else if (buttonMask & BTN_F_MASK)
+        btnChar = 'F';
+
+    // Map Event Type
+    const char *actionStr = "single";
+    if (eventType == EVENT_LONG_PRESS)
+        actionStr = "hold";
+
+    // Construct JSON string manually to save memory/complexity if preferred,
+    // or use ArduinoJson. Here is the manual string way (lighter):
+    char payload[64];
+    snprintf(payload, sizeof(payload), "{\"button\":\"%c\",\"type\":\"%s\"}", btnChar, actionStr);
+
+    Serial.printf("Sending Payload: %s\n", payload);
+
+    // 2. Send POST
+    int httpCode = http.POST(payload);
+    bool success = false;
+
+    if (httpCode > 0)
+    {
+        Serial.printf("API Response: %d\n", httpCode);
+        if (httpCode == HTTP_CODE_OK)
+        {
+            success = true;
+            // Optional: You could read the response body here if the server
+            // sends back instructions like {"refresh": true}
+        }
+    }
+    else
+    {
+        Serial.printf("API Error: %s\n", http.errorToString(httpCode).c_str());
+    }
+
+    http.end();
+    return success;
+}

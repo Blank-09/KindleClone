@@ -13,8 +13,6 @@ public:
     void init();
     void showImage(const uint8_t *imageBuffer);
     void showError(bool wifiConnected);
-    void showLoading(const char *message);
-    void showMenu();
     void hibernate();
 };
 

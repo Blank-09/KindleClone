@@ -1,94 +1,91 @@
 #include "ButtonManager.h"
 
 ButtonManager::ButtonManager()
-    : lastPressTime(0), prevPressed(false), nextPressed(false), menuPressed(false) {}
+    : pressStartTime(0), lastStableMask(0), longPressTriggered(false) {}
 
 void ButtonManager::setup()
 {
-    pinMode(BUTTON_PREV, INPUT_PULLUP);
-    pinMode(BUTTON_NEXT, INPUT_PULLUP);
-    pinMode(BUTTON_MENU, INPUT_PULLUP);
+    // Configure all 6 pins with internal pull-ups
+    pinMode(BUTTON_PIN_A, INPUT_PULLUP);
+    pinMode(BUTTON_PIN_B, INPUT_PULLUP);
+    pinMode(BUTTON_PIN_C, INPUT_PULLUP);
+    pinMode(BUTTON_PIN_D, INPUT_PULLUP);
+    pinMode(BUTTON_PIN_E, INPUT_PULLUP);
+    pinMode(BUTTON_PIN_F, INPUT_PULLUP);
 
-    Serial.println("Buttons configured");
+    Serial.println("6-Button Matrix Configured");
 }
 
 void ButtonManager::setupDeepSleepWakeup()
 {
-    esp_sleep_enable_ext0_wakeup((gpio_num_t)BUTTON_PREV, LOW);
-    Serial.println("Deep sleep wake-up configured");
+    // Wake up when Button A is pressed (Low)
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)BUTTON_PIN_A, LOW);
 }
 
-ButtonAction ButtonManager::getWakeupButton()
+uint8_t ButtonManager::readRawState()
 {
-    if (digitalRead(BUTTON_PREV) == LOW)
-    {
-        return BUTTON_PREV_PRESSED;
-    }
-    else if (digitalRead(BUTTON_NEXT) == LOW)
-    {
-        return BUTTON_NEXT_PRESSED;
-    }
-    else if (digitalRead(BUTTON_MENU) == LOW)
-    {
-        return BUTTON_MENU_PRESSED;
-    }
-    return BUTTON_NONE;
+    uint8_t mask = 0;
+    // Active LOW logic: !digitalRead returns true (1) if pressed (LOW)
+    if (!digitalRead(BUTTON_PIN_A))
+        mask |= BTN_A_MASK;
+    if (!digitalRead(BUTTON_PIN_B))
+        mask |= BTN_B_MASK;
+    if (!digitalRead(BUTTON_PIN_C))
+        mask |= BTN_C_MASK;
+    if (!digitalRead(BUTTON_PIN_D))
+        mask |= BTN_D_MASK;
+    if (!digitalRead(BUTTON_PIN_E))
+        mask |= BTN_E_MASK;
+    if (!digitalRead(BUTTON_PIN_F))
+        mask |= BTN_F_MASK;
+    return mask;
 }
 
-ButtonAction ButtonManager::checkButtons()
+ButtonEvent ButtonManager::checkButtons()
 {
-    unsigned long currentTime = millis();
+    ButtonEvent event = {EVENT_NONE, 0};
+    uint8_t currentMask = readRawState();
+    unsigned long now = millis();
 
-    // Debounce check
-    if (currentTime - lastPressTime < DEBOUNCE_DELAY)
+    // 1. Detect State Change
+    if (currentMask != lastStableMask)
     {
-        return BUTTON_NONE;
+        delay(20); // Simple mechanical debounce
+        uint8_t stableNow = readRawState();
+
+        // If signal is noisy, ignore
+        if (stableNow != currentMask)
+            return event;
+
+        // Button PRESS (0 -> Something)
+        if (lastStableMask == 0 && stableNow != 0)
+        {
+            pressStartTime = now;
+            longPressTriggered = false;
+        }
+
+        // Button RELEASE (Something -> 0)
+        // Only trigger Short Press if we haven't already fired Long Press
+        if (stableNow == 0 && lastStableMask != 0 && !longPressTriggered)
+        {
+            event.type = EVENT_SHORT_PRESS;
+            event.mask = lastStableMask; // Return the buttons that were just released
+        }
+
+        lastStableMask = stableNow;
     }
 
-    bool prevState = digitalRead(BUTTON_PREV) == LOW;
-    bool nextState = digitalRead(BUTTON_NEXT) == LOW;
-    bool menuState = digitalRead(BUTTON_MENU) == LOW;
-
-    ButtonAction action = BUTTON_NONE;
-
-    // Previous button
-    if (prevState && !prevPressed)
+    // 2. Detect Long Press (Hold)
+    // If buttons are held down longer than threshold
+    if (lastStableMask != 0 && !longPressTriggered)
     {
-        prevPressed = true;
-        lastPressTime = currentTime;
-        action = BUTTON_PREV_PRESSED;
-        Serial.println("Previous button pressed!");
-    }
-    else if (!prevState)
-    {
-        prevPressed = false;
+        if (now - pressStartTime > LONG_PRESS_MS)
+        {
+            event.type = EVENT_LONG_PRESS;
+            event.mask = lastStableMask;
+            longPressTriggered = true; // Prevent re-firing
+        }
     }
 
-    // Next button
-    if (nextState && !nextPressed)
-    {
-        nextPressed = true;
-        lastPressTime = currentTime;
-        action = BUTTON_NEXT_PRESSED;
-        Serial.println("Next button pressed!");
-    }
-    else if (!nextState)
-    {
-        nextPressed = false;
-    }
-
-    // Menu button
-    if (menuState && !menuPressed)
-    {
-        menuPressed = true;
-        lastPressTime = currentTime;
-        action = BUTTON_MENU_PRESSED;
-        Serial.println("Menu button pressed!");
-    }
-    else if (!menuState)
-    {
-        menuPressed = false;
-    }
-
-    return action;
+    return event;
 }
